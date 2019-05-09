@@ -36,13 +36,13 @@ namespace BatchHandler.ConsoleApp
         private readonly BatchConverter batchConverter;
         private readonly Batcher batcher;
         //private readonly object syncLock = new object();
-        private SemaphoreSlim semaphore;
+        //private SemaphoreSlim semaphore; // TODO: Dispose
 
         private readonly ConcurrentDictionary<int, TaskCompletionSource<Result>> dtoToCompletionSources = new ConcurrentDictionary<int, TaskCompletionSource<Result>>();
 
         public BatchProcessor(BatchConverter batchConverter, Batcher batcher)
         {
-            semaphore = new SemaphoreSlim(1, 1);
+            //semaphore = new SemaphoreSlim(1, 1);
             this.batchConverter = batchConverter;
             this.batcher = batcher;
 
@@ -70,8 +70,7 @@ namespace BatchHandler.ConsoleApp
                                     ProcessSuccess(t.Result);
                                     break;
                             }
-                            dtoToCompletionSources.Clear();
-
+                            //dtoToCompletionSources.Clear();
                         }/*, TaskContinuationOptions.LongRunning*/);
                 }
                 finally
@@ -83,11 +82,11 @@ namespace BatchHandler.ConsoleApp
 
         private void ProcessSuccess(Result[] results)
         {
-            if (results.Length != dtoToCompletionSources.Count)
-            {
-                throw new Exception($"There is a mismatch between result set length ({results.Length}) and task completion sources for per item handlers ({dtoToCompletionSources.Count}). " +
-                                    $"This is a bug in synchronization implementation on external entity lost the request identifiers. More likely former than later :/");
-            }
+            //if (results.Length != dtoToCompletionSources.Count)
+            //{
+            //    throw new Exception($"There is a mismatch between result set length ({results.Length}) and task completion sources for per item handlers ({dtoToCompletionSources.Count}). " +
+            //                        $"This is a bug in synchronization implementation on external entity lost the request identifiers. More likely former than later :/");
+            //}
 
             foreach (var result in results)
             {
@@ -100,6 +99,10 @@ namespace BatchHandler.ConsoleApp
                     dtoToCompletionSources[result.SourceDto].SetException(result.Exception);
                 }
             }
+            // TODO: Should be synced with Add!
+            //semaphore.Wait();
+            //dtoToCompletionSources.Clear();
+            //semaphore.Release();
         }
 
         private void ForeachTcs(Action<TaskCompletionSource<Result>> tcsAction)
@@ -108,7 +111,10 @@ namespace BatchHandler.ConsoleApp
             {
                 tcsAction(tcs);
             }
-
+            // TODO: Should be synced with Add!
+            //semaphore.Wait();
+            //dtoToCompletionSources.Clear();
+            //semaphore.Release();
         }
 
         public Task<Result> Convert(int i)
@@ -116,7 +122,6 @@ namespace BatchHandler.ConsoleApp
             var tcs = new TaskCompletionSource<Result>();
 
             batcher.Register(i);
-
             if (!dtoToCompletionSources.TryAdd(i, tcs))
             {
                 throw new Exception($"Key {i} was already present.");
@@ -132,7 +137,7 @@ namespace BatchHandler.ConsoleApp
         private readonly List<int> items;
         public event Action<int[]> OnActionable;
 
-        private object sync = new object();
+        private readonly object sync = new object();
 
         public Batcher()
         {
@@ -141,15 +146,21 @@ namespace BatchHandler.ConsoleApp
 
         public void Register(int i)
         {
+            int[] itemsToPropagate = null;
             lock (sync)
             {
                 items.Add(i);
 
                 if (items.Count == maxCount /*|| timer */)
                 {
-                    OnActionable?.Invoke(items.ToArray());
+                    itemsToPropagate = items.ToArray();
                     items.Clear();
                 }
+            }
+
+            if (itemsToPropagate != null)
+            {
+                OnActionable?.Invoke(itemsToPropagate);
             }
         }
     }
