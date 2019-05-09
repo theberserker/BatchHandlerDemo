@@ -5,19 +5,16 @@ namespace BatchHandler.ConsoleApp
 {
     public class SimpleHandler
     {
-        public int Number { get; }
-
-        public SimpleHandler(int number)
+        public SimpleHandler()
         {
-            this.Number = number;
         }
 
-        public Task<string> Handle()
+        public Task<string> Handle(int number)
         {
             var tcs = new TaskCompletionSource<string>();
             try
             {
-                var task = SimpleConverter.Convert(Number);
+                var task = SimpleConverter.Convert(number);
                 task.ContinueWith(t => tcs.SetResult(t.Result), TaskContinuationOptions.OnlyOnRanToCompletion);
                 task.ContinueWith(t => tcs.SetException(t.Exception), TaskContinuationOptions.OnlyOnFaulted);
             }
