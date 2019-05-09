@@ -31,52 +31,34 @@ namespace BatchHandler.ConsoleApp
     /// </summary>
     public class BatchProcessor
     {
-        //private int maxCount = 4;
-        //private System.Timers.Timer timer;
         private readonly BatchConverter batchConverter;
         private readonly Batcher batcher;
-        //private readonly object syncLock = new object();
-        //private SemaphoreSlim semaphore; // TODO: Dispose
 
         private readonly ConcurrentDictionary<int, TaskCompletionSource<Result>> dtoToCompletionSources = new ConcurrentDictionary<int, TaskCompletionSource<Result>>();
 
         public BatchProcessor(BatchConverter batchConverter, Batcher batcher)
         {
-            //semaphore = new SemaphoreSlim(1, 1);
             this.batchConverter = batchConverter;
             this.batcher = batcher;
 
             this.batcher.OnActionable += integers =>
             {
-                //var results = await batchConverter.Convert(integers);
-
-                try
-                {
-
-                    //semaphore.Wait(); // TODO: WaitAsync? or AsyncEx.AsyncLock?
-
-                    this.batchConverter.Convert(integers)
-                        .ContinueWith(t =>
+                this.batchConverter.Convert(integers)
+                    .ContinueWith(t =>
+                    {
+                        switch (t.Status)
                         {
-                            switch (t.Status)
-                            {
-                                case TaskStatus.Canceled:
-                                    ForeachTcs(tcs => tcs.SetCanceled());
-                                    break;
-                                case TaskStatus.Faulted:
-                                    ForeachTcs(tcs => tcs.SetException(t.Exception));
-                                    break;
-                                case TaskStatus.RanToCompletion:
-                                    ProcessSuccess(t.Result);
-                                    break;
-                            }
-                            //dtoToCompletionSources.Clear();
-                        }/*, TaskContinuationOptions.LongRunning*/);
-                }
-                finally
-                {
-                    //semaphore.Release();
-                }
+                            case TaskStatus.Canceled:
+                                ForeachTcs(tcs => tcs.SetCanceled());
+                                break;
+                            case TaskStatus.Faulted:
+                                ForeachTcs(tcs => tcs.SetException(t.Exception));
+                                break;
+                            case TaskStatus.RanToCompletion:
+                                ProcessSuccess(t.Result);
+                                break;
+                        }
+                    }/*, TaskContinuationOptions.LongRunning*/);
             };
         }
 
@@ -99,10 +81,6 @@ namespace BatchHandler.ConsoleApp
                     dtoToCompletionSources[result.SourceDto].SetException(result.Exception);
                 }
             }
-            // TODO: Should be synced with Add!
-            //semaphore.Wait();
-            //dtoToCompletionSources.Clear();
-            //semaphore.Release();
         }
 
         private void ForeachTcs(Action<TaskCompletionSource<Result>> tcsAction)
@@ -111,10 +89,6 @@ namespace BatchHandler.ConsoleApp
             {
                 tcsAction(tcs);
             }
-            // TODO: Should be synced with Add!
-            //semaphore.Wait();
-            //dtoToCompletionSources.Clear();
-            //semaphore.Release();
         }
 
         public Task<Result> Convert(int i)
