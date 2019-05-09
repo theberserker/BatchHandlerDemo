@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace BatchHandler.ConsoleApp
@@ -10,15 +9,15 @@ namespace BatchHandler.ConsoleApp
     public class BatchingHandler
     {
         private readonly int i;
-        private readonly int maxCount = 10;
-        BindingList<int> l;
+        private static readonly int maxCount = 4;
+        //private static BindingList<int> l;
+        private static List<int> l = new List<int>(maxCount);
+        private static readonly BatchConverter batchConverter = new BatchConverter();
+        private bool timeToRun = false; // TODO: Implement scheduling
 
         public BatchingHandler(int i)
         {
             this.i = i;
-            this.l = new BindingList<int>();
-            l.RaiseListChangedEvents = true;
-            l.ListChanged += ListChanged;
         }
 
         private void ListChanged(object sender, ListChangedEventArgs e)
@@ -32,22 +31,30 @@ namespace BatchHandler.ConsoleApp
         public Task<Result[]> Handle()
         {
             var tcs = new TaskCompletionSource<Result[]>();
-
+            
             // TODO: Thread safety
+
+            batchConverter.OnCompleted += results =>
+            {
+                tcs.SetResult(results);
+            };
+
+            batchConverter.OnErrored += ex =>
+            {
+                tcs.TrySetException(ex);
+            };
 
             if (l.Count < maxCount)
             {
                 l.Add(i);
             }
-            else
+            if (l.Count == maxCount || timeToRun)
             {
                 try
                 {
                     var all = l.ToArray();
-                    var resultAllTask = BatchConverter.Convert(all);
+                    batchConverter.Convert(all); // TODO: Converter could/should be void
                     l.Clear();
-                    resultAllTask.ContinueWith(t => tcs.SetResult(t.Result), TaskContinuationOptions.OnlyOnRanToCompletion);
-                    resultAllTask.ContinueWith(t => tcs.SetException(t.Exception), TaskContinuationOptions.OnlyOnFaulted);
                 }
                 catch (Exception ex)
                 {
@@ -70,18 +77,36 @@ namespace BatchHandler.ConsoleApp
     /// <summary>
     /// Calculates items in batch.
     /// </summary>
-    public static class BatchConverter
+    public class BatchConverter
     {
-        static readonly Random rand = new Random();
+        //public event EventHandler OnBatchProcessed;
+        public event Action<Result[]> OnCompleted; 
+        public event Action<Exception> OnErrored;
 
-        public static async Task<Result[]> Convert(int[] iArray)
+        readonly Random rand = new Random();
+
+        public async void Convert(int[] array)
         {
-            await Task.Delay(rand.Next(1200));
-            return iArray
-                .Select(i => i % 10 == 0 ? new Result(new Exception($"Error occoured at {i}.")) : new Result(i.ToString("X2")))
-                .ToArray();
+            try
+            {
+                var result = await Task.Factory.StartNew(arg =>
+                {
+                    // TODO: Test throw exception!
+                    return ((int[]) arg)
+                        .Select(i => i % 10 == 0
+                            ? new Result(new Exception($"Error occoured at {i}."))
+                            : new Result(i.ToString("X2")))
+                        .ToArray();
+                }, array);
+
+                OnCompleted?.Invoke(result);
+            }
+            catch (Exception ex)
+            {
+                OnErrored?.Invoke(ex);
+            }
         }
-    }
+}
 
     public class Result
     {
@@ -97,5 +122,10 @@ namespace BatchHandler.ConsoleApp
 
         public string Hex { get; }
         public Exception Exception { get; }
+
+        public override string ToString()
+        {
+            return Exception == null ? Hex : Exception.Message;
+        }
     }
 }

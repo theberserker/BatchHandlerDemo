@@ -38,6 +38,10 @@ namespace BatchHandler.ConsoleApp
 
             await Task.WhenAll(handlers);
 
+            foreach (var result in handlers.SelectMany(x => x.Result))
+            {
+                Console.WriteLine(result);
+            }
 
             Console.ReadKey();
         }
