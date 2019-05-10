@@ -23,7 +23,8 @@ namespace BatchHandler.ConsoleApp
         {
             var batchProcessor = new BatchProcessor(new BatchConverter(), new Batcher(), 5, 10);
 
-            var handlers = Enumerable.Range(1, 1000)
+            int rangeTo = 1000;
+            var handlers = Enumerable.Range(1, rangeTo)
                 .Select(x => new { Number = x, CalculateTask = new BatchingHandler(batchProcessor).Handle(x) })
                 .ToList();
 
@@ -34,9 +35,8 @@ namespace BatchHandler.ConsoleApp
                 {
                     hexResult = await h.CalculateTask;
 
-                    // this hopes to find issue when iterating dictionary and removing things out of it at once.
-                    // to be able to produce the exception SemaphoreSlim should allow multiple handlers.
-                    var handlers2 = Enumerable.Range(1001 * hexResult.SourceDto, 100)
+                    // Throw more handlers into the game...
+                    var handlers2 = Enumerable.Range(rangeTo+1 * hexResult.SourceDto, 100)
                         .Select(x => new {Number = x, CalculateTask = new BatchingHandler(batchProcessor).Handle(x)})
                         .Select(async x =>
                         {

@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -44,7 +43,6 @@ namespace BatchHandler.ConsoleApp
             this.batcher = batcher;
             this.semaphore = new SemaphoreSlim(semaphoreInitial, maxConcurrentRequests);
 
-
             this.batcher.OnActionable += batch =>
             {
                 // Allow single execution to the Batch Convert API
@@ -69,6 +67,11 @@ namespace BatchHandler.ConsoleApp
                         }
 
                         RemoveFinishedCompletionSources(batch.BatchId);
+                        if (!batchIdToItems.TryRemove(batch.BatchId, out _))
+                        {
+                            throw new KeyNotFoundException($"Could not find key {batch.BatchId}");
+                        }
+
 
                     }/*, TaskContinuationOptions.LongRunning*/);
                 semaphore.Release();
@@ -118,7 +121,7 @@ namespace BatchHandler.ConsoleApp
 
                 if (!dtoToCompletionSources.TryRemove(i, out _))
                 {
-                    throw new Exception($"The key is not present anymore: {i}.");
+                    throw new KeyNotFoundException($"The key is not present anymore: {i}.");
                 }
             }
         }
@@ -198,7 +201,7 @@ namespace BatchHandler.ConsoleApp
     {
         public async Task<Result[]> Convert(int[] array)
         {
-            await Task.Delay(100);
+            await Task.Delay(50);
             return array.Select(i => i % 1000 == 0
                     ? new Result(i, new ItemFailedException($"Error occoured at {i}."))
                     : new Result(i, i.ToString("X2")))
