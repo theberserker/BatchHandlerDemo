@@ -236,11 +236,8 @@ namespace BatchHandler.ConsoleApp
                 timer.Stop();
             }
 
-            // TODO: this if is redundant
-            if (itemsToPropagate != default)
-            {
-                OnActionable?.Invoke(itemsToPropagate);
-            }
+            // if we have reached this point, we have items to propagate
+            OnActionable?.Invoke(itemsToPropagate);
 
             return registrationItemBatchId;
         }

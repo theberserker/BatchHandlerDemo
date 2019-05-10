@@ -48,14 +48,14 @@ namespace BatchHandler.ConsoleApp
                 }
                 catch (ItemFailedException ex)
                 {
-                    Console.WriteLine("ItemFailedException:" + ex);
+                    //Console.WriteLine("ItemFailedException:" + ex);
                 }
                 catch (Exception ex)
                 {
                     Console.WriteLine("Unexpected exception:" + ex);
                 }
 
-                Console.WriteLine($"{h.Number}: {h.CalculateTask.Result}");
+                Console.WriteLine($"{h.Number}: {hexResult?.Hex ?? "This item failed."}");
             }
         }
 
