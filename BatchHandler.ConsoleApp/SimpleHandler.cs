@@ -46,7 +46,7 @@ namespace BatchHandler.ConsoleApp
 
             if (i % 10 == 0)
             {
-                throw new Exception($"Error occoured at {i}.");
+                throw new ItemFailedException($"Error occoured at {i}.");
             }
 
             string hex = i.ToString("X2");

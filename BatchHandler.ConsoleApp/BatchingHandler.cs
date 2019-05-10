@@ -139,6 +139,9 @@ namespace BatchHandler.ConsoleApp
         }
     }
 
+    /// <summary>
+    /// Batches items in a way that ether max quantity or max elapsed time is reached.
+    /// </summary>
     public class Batcher
     {
         public readonly int MaxCount = 2;
@@ -154,7 +157,6 @@ namespace BatchHandler.ConsoleApp
             currentBatchId = Guid.NewGuid();
         }
 
-        
         public Guid Register(int i)
         {
             (Guid, int[]) itemsToPropagate = default;
@@ -192,17 +194,14 @@ namespace BatchHandler.ConsoleApp
     /// </summary>
     public class BatchConverter
     {
-        public Task<Result[]> Convert(int[] array)
+        public async Task<Result[]> Convert(int[] array)
         {
-            return Task.Factory.StartNew(arg =>
-            {
-                // TODO: Test throw exception!
-                return ((int[]) arg)
-                    .Select(i => i % 10 == 0
-                        ? new Result(i, new Exception($"Error occoured at {i}."))
-                        : new Result(i, i.ToString("X2")))
-                    .ToArray();
-            }, array);
+            await Task.Delay(100);
+            return array.Select(i => i % 1000 == 0
+                    ? new Result(i, new ItemFailedException($"Error occoured at {i}."))
+                    : new Result(i, i.ToString("X2")))
+                .ToArray();
+
         }
     }
 
@@ -214,7 +213,7 @@ namespace BatchHandler.ConsoleApp
             Hex = hex;
         }
 
-        public Result(int sourceDto, Exception exception)
+        public Result(int sourceDto, ItemFailedException exception)
         {
             SourceDto = sourceDto;
             Exception = exception;
@@ -225,7 +224,7 @@ namespace BatchHandler.ConsoleApp
         /// </summary>
         public int SourceDto { get; }
         public string Hex { get; }
-        public Exception Exception { get; }
+        public ItemFailedException Exception { get; }
 
         public override string ToString()
         {

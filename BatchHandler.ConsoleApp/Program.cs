@@ -22,15 +22,9 @@ namespace BatchHandler.ConsoleApp
         private static async Task InvokeBatchingHandler()
         {
             var batchProcessor = new BatchProcessor(new BatchConverter(), new Batcher());
-            var handlers = Enumerable.Range(1, 30)
+            var handlers = Enumerable.Range(1, 1000)
                 .Select(x => new { Number = x, CalculateTask = new BatchingHandler(batchProcessor).Handle(x) })
                 .ToList();
-
-            //foreach (var handler in handlers)
-            //{
-            //    var result = await handler.CalculateTask;
-            //    Console.WriteLine(string.Join(Environment.NewLine, result.ToString()));
-            //}
 
             foreach (var h in handlers)
             {
