@@ -155,6 +155,7 @@ namespace BatchHandler.ConsoleApp
     public class Batcher
     {
         private readonly MyTimer timer;
+        private readonly State state;
         public readonly int MaxCount = 100;
         public event Action<(Guid BatchId, int[] Integers)> OnActionable;
 
@@ -166,18 +167,19 @@ namespace BatchHandler.ConsoleApp
         /// <summary>
         /// State of this class. Represents the pending batch ID for <see cref="items"/>.
         /// </summary>
-        private Guid currentBatchId;
+        //private Guid currentBatchId;
 
         /// <summary>
         /// State of this class. Represents items in a batch for <see cref="currentBatchId"/>.
         /// </summary>
-        private readonly List<int> items;
+        //private readonly List<int> items;
 
         public Batcher(MyTimer timer)
         {
             this.timer = timer;
-            items = new List<int>(MaxCount);
-            currentBatchId = Guid.NewGuid();
+            state = new State(MaxCount);
+            //items = new List<int>(MaxCount);
+            //currentBatchId = Guid.NewGuid();
 
             this.timer.Elapsed += Timer_Elapsed;
         }
@@ -191,15 +193,15 @@ namespace BatchHandler.ConsoleApp
             lock (sync)
             {
                 timer.Stop();
-                if (!items.Any())
+                if (!state.Items.Any())
                 {
                     Console.WriteLine($"Reached timer, but there is nothing to process.");
                     return;
                 }
 
-                Console.WriteLine($"Reached timer. Items in a batch: {items.Count}.");
-                itemsToPropagate = (currentBatchId, items.ToArray());
-                RestartBatch();
+                Console.WriteLine($"Reached timer. Items in a batch: {state.Items.Count}.");
+                itemsToPropagate = state.ToResult();
+                state.RestartBatch();
             }
 
             OnActionable?.Invoke(itemsToPropagate);
@@ -218,19 +220,19 @@ namespace BatchHandler.ConsoleApp
 
             lock (sync)
             {
-                registrationItemBatchId = currentBatchId;
-                items.Add(i);
+                registrationItemBatchId = state.CurrentBatchId;
+                state.Add(i);
                 timer.StartIfNotRunning();
 
-                if (items.Count != MaxCount)
+                if (state.Items.Count != MaxCount)
                 {
                     // in this case we are still processing existing batch
                     return registrationItemBatchId;
                 }
 
-                Console.WriteLine($"The batch has reached limit of {items.Count}.");
-                itemsToPropagate = (registrationItemBatchId, items.ToArray());
-                RestartBatch();
+                Console.WriteLine($"The batch has reached limit of {state.Items.Count}.");
+                itemsToPropagate = state.ToResult();
+                state.RestartBatch();
 
                 // Stop the timer, as the batch is done. Next iterations should restart it for themselves.
                 timer.Stop();
@@ -243,12 +245,37 @@ namespace BatchHandler.ConsoleApp
         }
 
         /// <summary>
-        /// Starts a new batch by resetting the state fields.
+        /// Single instance of state for a <see cref="Batcher"/>.
         /// </summary>
-        private void RestartBatch()
+        class State
         {
-            items.Clear();
-            currentBatchId = Guid.NewGuid();
+            public State(int maxItemCount)
+            {
+                this.Items = new List<int>(maxItemCount);
+                this.CurrentBatchId = Guid.NewGuid();
+            }
+
+            public List<int> Items { get; }
+            public Guid CurrentBatchId { get; private set; }
+
+            public (Guid batchId, int[] items) ToResult()
+            {
+                return (CurrentBatchId, Items.ToArray());
+            }
+
+            public void Add(int i)
+            {
+                Items.Add(i);
+            }
+
+            /// <summary>
+            /// Resets the state and starts a new batch.
+            /// </summary>
+            public void RestartBatch()
+            {
+                Items.Clear();
+                CurrentBatchId = Guid.NewGuid();
+            }
         }
     }
 
