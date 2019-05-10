@@ -149,6 +149,8 @@ namespace BatchHandler.ConsoleApp
 
     /// <summary>
     /// Batches items in a way that ether max quantity or max elapsed time is reached.
+    /// In case the timer option was reached, the timer will also stop itself, and get invoked only on next items being added,
+    /// as it is expected that timer based executions will get triggered only when there are insufficient handlers that would fill up the queue.
     /// </summary>
     public class Batcher
     {
@@ -156,8 +158,19 @@ namespace BatchHandler.ConsoleApp
         public readonly int MaxCount = 100;
         public event Action<(Guid BatchId, int[] Integers)> OnActionable;
 
-        private Guid currentBatchId;
+        /// <summary>
+        /// Synchronization object for any changes over state members.
+        /// </summary>
         private readonly object sync = new object();
+
+        /// <summary>
+        /// State of this class. Represents the pending batch ID for <see cref="items"/>.
+        /// </summary>
+        private Guid currentBatchId;
+
+        /// <summary>
+        /// State of this class. Represents items in a batch for <see cref="currentBatchId"/>.
+        /// </summary>
         private readonly List<int> items;
 
         public Batcher(MyTimer timer)
@@ -169,6 +182,9 @@ namespace BatchHandler.ConsoleApp
             this.timer.Elapsed += Timer_Elapsed;
         }
 
+        /// <summary>
+        /// Handles cases on timer when batches should become actionable, because they will obviously not reach their full potential and should be served in timely-fashion.
+        /// </summary>
         private void Timer_Elapsed(object sender, ElapsedEventArgs e)
         {
             (Guid, int[]) itemsToPropagate = default;
@@ -183,16 +199,18 @@ namespace BatchHandler.ConsoleApp
 
                 Console.WriteLine($"Reached timer. Items in a batch: {items.Count}.");
                 itemsToPropagate = (currentBatchId, items.ToArray());
-
-                items.Clear();
-                currentBatchId = Guid.NewGuid();
-
+                RestartBatch();
             }
 
             OnActionable?.Invoke(itemsToPropagate);
             timer.StartIfNotRunning();
         }
 
+        /// <summary>
+        /// Handles
+        /// </summary>
+        /// <param name="i"></param>
+        /// <returns></returns>
         public Guid Register(int i)
         {
             (Guid, int[]) itemsToPropagate = default;
@@ -212,9 +230,7 @@ namespace BatchHandler.ConsoleApp
 
                 Console.WriteLine($"The batch has reached limit of {items.Count}.");
                 itemsToPropagate = (registrationItemBatchId, items.ToArray());
-
-                items.Clear();
-                currentBatchId = Guid.NewGuid();
+                RestartBatch();
 
                 // Stop the timer, as the batch is done. Next iterations should restart it for themselves.
                 timer.Stop();
@@ -227,6 +243,15 @@ namespace BatchHandler.ConsoleApp
             }
 
             return registrationItemBatchId;
+        }
+
+        /// <summary>
+        /// Starts a new batch by resetting the state fields.
+        /// </summary>
+        private void RestartBatch()
+        {
+            items.Clear();
+            currentBatchId = Guid.NewGuid();
         }
     }
 
@@ -284,17 +309,16 @@ namespace BatchHandler.ConsoleApp
                 Enabled = false,
                 AutoReset = false, // we will control the new iteration
             };
-
-            t.Elapsed += (sender, args) => { HasExpired = true; };
         }
 
+        /// <summary>
+        /// Subscribe outer subscriptions directly to the Timer t.
+        /// </summary>
         public event ElapsedEventHandler Elapsed
         {
             add => t.Elapsed += value;
             remove => t.Elapsed -= value;
         }
-
-        public bool HasExpired { get; private set; }
 
         public void StartIfNotRunning()
         {
@@ -307,7 +331,6 @@ namespace BatchHandler.ConsoleApp
         public void Stop()
         {
             t.Stop();
-            HasExpired = false;
         }
 
         public void Dispose()
