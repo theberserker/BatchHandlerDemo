@@ -33,15 +33,17 @@ namespace BatchHandler.ConsoleApp
     {
         private readonly BatchConverter batchConverter;
         private readonly Batcher batcher;
-        private readonly SemaphoreSlim semaphore = new SemaphoreSlim(1, 1);
+        private readonly SemaphoreSlim semaphore;
 
         private readonly ConcurrentDictionary<int, TaskCompletionSource<Result>> dtoToCompletionSources = new ConcurrentDictionary<int, TaskCompletionSource<Result>>();
         private readonly ConcurrentDictionary<Guid, List<int>> batchIdToItems = new ConcurrentDictionary<Guid, List<int>>();
 
-        public BatchProcessor(BatchConverter batchConverter, Batcher batcher)
+        public BatchProcessor(BatchConverter batchConverter, Batcher batcher, int semaphoreInitial, int maxConcurrentRequests)
         {
             this.batchConverter = batchConverter;
             this.batcher = batcher;
+            this.semaphore = new SemaphoreSlim(semaphoreInitial, maxConcurrentRequests);
+
 
             this.batcher.OnActionable += batch =>
             {
