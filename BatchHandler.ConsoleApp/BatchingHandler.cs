@@ -164,7 +164,7 @@ namespace BatchHandler.ConsoleApp
             {
                 items.Add(i);
 
-                if (items.Count == MaxCount /*|| timer */)
+                if (items.Count == MaxCount /*|| timer (TODO)*/)
                 {
                     returnBatchId = currentBatchId;
                     itemsToPropagate = (returnBatchId, items.ToArray());
@@ -230,34 +230,6 @@ namespace BatchHandler.ConsoleApp
         public override string ToString()
         {
             return Exception == null ? Hex : Exception.Message;
-        }
-    }
-
-
-    /// <summary>
-    /// https://stackoverflow.com/questions/4890915/is-there-a-task-based-replacement-for-system-threading-timer
-    /// Makes sure that the period is how often it is run by deducting the task's run time from the period for the next delay.
-    /// </summary>
-    public static class PeriodicTask
-    {
-        static readonly Stopwatch Stopwatch = Stopwatch.StartNew();
-
-        public static async Task Run(
-            Func<Task> action,
-            TimeSpan period,
-            CancellationToken cancellationToken = default(CancellationToken))
-        {
-            while (!cancellationToken.IsCancellationRequested)
-            {
-                Stopwatch.Reset();
-
-                if (!cancellationToken.IsCancellationRequested)
-                    await action();
-
-                Stopwatch.Stop();
-
-                await Task.Delay(period - Stopwatch.Elapsed, cancellationToken);
-            }
         }
     }
 }
