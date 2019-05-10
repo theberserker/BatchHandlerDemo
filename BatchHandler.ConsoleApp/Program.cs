@@ -21,21 +21,23 @@ namespace BatchHandler.ConsoleApp
 
         private static async Task InvokeBatchingHandler()
         {
-            var batchProcessor = new BatchProcessor(new BatchConverter(), new Batcher(), 5, 10);
+            var timer = new MyTimer(1000);
+            var batchProcessor = new BatchProcessor(new BatchConverter(), new Batcher(timer), 5, 10);
 
-            int rangeTo = 1000;
+            int rangeTo = 1008;
             var handlers = Enumerable.Range(1, rangeTo)
                 .Select(x => new { Number = x, CalculateTask = new BatchingHandler(batchProcessor).Handle(x) })
                 .ToList();
 
             // Throw some more work, fire and forget
-            await Task.Run(async () =>
-            {
-                Enumerable.Range(rangeTo+1, 10000)
-                    .Select(x => new {Number = x, CalculateTask = new BatchingHandler(batchProcessor).Handle(x)})
-                    .Select(async x => Console.WriteLine(await x.CalculateTask))
-                    .ToList();
-            });
+            //await Task.Run(async () =>
+            //{
+            //    Enumerable.Range(rangeTo+1, 10000)
+            //        .Select(x => new {Number = x, CalculateTask = new BatchingHandler(batchProcessor).Handle(x)})
+            //        //.Select(async x => Console.WriteLine(await x.CalculateTask))
+            //        .Select(async x => await x.CalculateTask)
+            //        .ToList();
+            //});
 
             foreach (var h in handlers)
             {
@@ -53,7 +55,7 @@ namespace BatchHandler.ConsoleApp
                     Console.WriteLine("Unexpected exception:" + ex);
                 }
 
-                Console.WriteLine(hexResult);
+                Console.WriteLine($"{h.Number}: {h.CalculateTask.Result}");
             }
         }
 

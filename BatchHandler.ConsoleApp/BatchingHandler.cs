@@ -1,9 +1,12 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Timers;
+using Timer=System.Timers.Timer;
 
 namespace BatchHandler.ConsoleApp
 {
@@ -149,48 +152,81 @@ namespace BatchHandler.ConsoleApp
     /// </summary>
     public class Batcher
     {
-        public readonly int MaxCount = 2;
-        private readonly List<int> items;
+        private readonly MyTimer timer;
+        public readonly int MaxCount = 100;
         public event Action<(Guid BatchId, int[] Integers)> OnActionable;
 
         private Guid currentBatchId;
         private readonly object sync = new object();
+        private readonly List<int> items;
 
-        public Batcher()
+        public Batcher(MyTimer timer)
         {
+            this.timer = timer;
             items = new List<int>(MaxCount);
             currentBatchId = Guid.NewGuid();
+
+            this.timer.Elapsed += Timer_Elapsed;
+        }
+
+        private void Timer_Elapsed(object sender, ElapsedEventArgs e)
+        {
+            (Guid, int[]) itemsToPropagate = default;
+            lock (sync)
+            {
+                timer.Stop();
+                if (!items.Any())
+                {
+                    Console.WriteLine($"Reached timer, but there is nothing to process.");
+                    return;
+                }
+
+                Console.WriteLine($"Reached timer. Items in a batch: {items.Count}.");
+                itemsToPropagate = (currentBatchId, items.ToArray());
+
+                items.Clear();
+                currentBatchId = Guid.NewGuid();
+
+            }
+
+            OnActionable?.Invoke(itemsToPropagate);
+            timer.StartIfNotRunning();
         }
 
         public Guid Register(int i)
         {
             (Guid, int[]) itemsToPropagate = default;
+            Guid registrationItemBatchId = default;
 
-            Guid returnBatchId = default;
             lock (sync)
             {
+                registrationItemBatchId = currentBatchId;
                 items.Add(i);
+                timer.StartIfNotRunning();
 
-                if (items.Count == MaxCount /*|| timer (TODO)*/)
+                if (items.Count != MaxCount)
                 {
-                    returnBatchId = currentBatchId;
-                    itemsToPropagate = (returnBatchId, items.ToArray());
+                    // in this case we are still processing existing batch
+                    return registrationItemBatchId;
+                }
 
-                    items.Clear();
-                    currentBatchId = Guid.NewGuid();
-                }
-                else
-                {
-                    returnBatchId = currentBatchId;
-                }
+                Console.WriteLine($"The batch has reached limit of {items.Count}.");
+                itemsToPropagate = (registrationItemBatchId, items.ToArray());
+
+                items.Clear();
+                currentBatchId = Guid.NewGuid();
+
+                // Stop the timer, as the batch is done. Next iterations should restart it for themselves.
+                timer.Stop();
             }
 
+            // TODO: this if is redundant
             if (itemsToPropagate != default)
             {
                 OnActionable?.Invoke(itemsToPropagate);
             }
 
-            return returnBatchId;
+            return registrationItemBatchId;
         }
     }
 
@@ -201,7 +237,7 @@ namespace BatchHandler.ConsoleApp
     {
         public async Task<Result[]> Convert(int[] array)
         {
-            await Task.Delay(50);
+            await Task.Delay(500);
             return array.Select(i => i % 1000 == 0
                     ? new Result(i, new ItemFailedException($"Error occoured at {i}."))
                     : new Result(i, i.ToString("X2")))
@@ -234,6 +270,49 @@ namespace BatchHandler.ConsoleApp
         public override string ToString()
         {
             return Exception == null ? Hex : Exception.Message;
+        }
+    }
+
+    public class MyTimer : IDisposable
+    {
+        private readonly Timer t;
+
+        public MyTimer(double expirationMilliseconds)
+        {
+            t = new Timer(expirationMilliseconds)
+            {
+                Enabled = false,
+                AutoReset = false, // we will control the new iteration
+            };
+
+            t.Elapsed += (sender, args) => { HasExpired = true; };
+        }
+
+        public event ElapsedEventHandler Elapsed
+        {
+            add => t.Elapsed += value;
+            remove => t.Elapsed -= value;
+        }
+
+        public bool HasExpired { get; private set; }
+
+        public void StartIfNotRunning()
+        {
+            if (!t.Enabled)
+            {
+                t.Start();
+            }
+        }
+
+        public void Stop()
+        {
+            t.Stop();
+            HasExpired = false;
+        }
+
+        public void Dispose()
+        {
+            t?.Dispose();
         }
     }
 }
