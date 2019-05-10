@@ -193,13 +193,13 @@ namespace BatchHandler.ConsoleApp
             lock (sync)
             {
                 timer.Stop();
-                if (!state.Items.Any())
+                if (!state.HasItems)
                 {
                     Console.WriteLine($"Reached timer, but there is nothing to process.");
                     return;
                 }
 
-                Console.WriteLine($"Reached timer. Items in a batch: {state.Items.Count}.");
+                Console.WriteLine($"Reached timer. Items in a batch: {state.ItemCount}.");
                 itemsToPropagate = state.ToResult();
                 state.RestartBatch();
             }
@@ -224,13 +224,13 @@ namespace BatchHandler.ConsoleApp
                 state.Add(i);
                 timer.StartIfNotRunning();
 
-                if (state.Items.Count != MaxCount)
+                if (!state.HasReachedMax)
                 {
                     // in this case we are still processing existing batch
                     return registrationItemBatchId;
                 }
 
-                Console.WriteLine($"The batch has reached limit of {state.Items.Count}.");
+                Console.WriteLine($"The batch has reached limit of {state.ItemCount}.");
                 itemsToPropagate = state.ToResult();
                 state.RestartBatch();
 
@@ -251,29 +251,36 @@ namespace BatchHandler.ConsoleApp
         {
             public State(int maxItemCount)
             {
-                this.Items = new List<int>(maxItemCount);
+                this.items = new List<int>(maxItemCount);
                 this.CurrentBatchId = Guid.NewGuid();
+                this.maxItemCount = maxItemCount;
             }
 
-            public List<int> Items { get; }
+            private readonly List<int> items;
+            private readonly int maxItemCount;
+
             public Guid CurrentBatchId { get; private set; }
 
             public (Guid batchId, int[] items) ToResult()
             {
-                return (CurrentBatchId, Items.ToArray());
+                return (CurrentBatchId, items.ToArray());
             }
 
             public void Add(int i)
             {
-                Items.Add(i);
+                items.Add(i);
             }
+
+            public bool HasReachedMax => items.Count == maxItemCount;
+            public bool HasItems => items.Any();
+            public int ItemCount => items.Count;
 
             /// <summary>
             /// Resets the state and starts a new batch.
             /// </summary>
             public void RestartBatch()
             {
-                Items.Clear();
+                items.Clear();
                 CurrentBatchId = Guid.NewGuid();
             }
         }
