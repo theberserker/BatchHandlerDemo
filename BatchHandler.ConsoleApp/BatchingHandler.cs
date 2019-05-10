@@ -33,43 +33,51 @@ namespace BatchHandler.ConsoleApp
     {
         private readonly BatchConverter batchConverter;
         private readonly Batcher batcher;
+        private readonly SemaphoreSlim semaphore = new SemaphoreSlim(1, 1);
 
         private readonly ConcurrentDictionary<int, TaskCompletionSource<Result>> dtoToCompletionSources = new ConcurrentDictionary<int, TaskCompletionSource<Result>>();
+        private readonly ConcurrentDictionary<Guid, List<int>> batchIdToItems = new ConcurrentDictionary<Guid, List<int>>();
 
         public BatchProcessor(BatchConverter batchConverter, Batcher batcher)
         {
             this.batchConverter = batchConverter;
             this.batcher = batcher;
 
-            this.batcher.OnActionable += integers =>
+            this.batcher.OnActionable += batch =>
             {
-                this.batchConverter.Convert(integers)
+                // Allow single execution to the Batch Convert API
+                semaphore.Wait();
+                this.batchConverter.Convert(batch.Integers)
                     .ContinueWith(t =>
                     {
                         switch (t.Status)
                         {
                             case TaskStatus.Canceled:
+                                // If the whole batch request was cancelled, set all the individual tasks as cancelled
                                 ForeachTcs(tcs => tcs.SetCanceled());
                                 break;
                             case TaskStatus.Faulted:
+                                // If the whole batch request was faulted, set exception to all the individual tasks
                                 ForeachTcs(tcs => tcs.SetException(t.Exception));
                                 break;
                             case TaskStatus.RanToCompletion:
+                                // If it was ok response, we have to assign result or exception per item (Api returns ether a result or exception object per item)
                                 ProcessSuccess(t.Result);
                                 break;
                         }
+
+                        RemoveFinishedCompletionSources(batch.BatchId);
+
                     }/*, TaskContinuationOptions.LongRunning*/);
+                semaphore.Release();
             };
         }
 
+        /// <summary>
+        /// Checks if the batched result was an exception or success result and sets it accordingly.
+        /// </summary>
         private void ProcessSuccess(Result[] results)
         {
-            //if (results.Length != dtoToCompletionSources.Count)
-            //{
-            //    throw new Exception($"There is a mismatch between result set length ({results.Length}) and task completion sources for per item handlers ({dtoToCompletionSources.Count}). " +
-            //                        $"This is a bug in synchronization implementation on external entity lost the request identifiers. More likely former than later :/");
-            //}
-
             foreach (var result in results)
             {
                 if (result.Exception == null)
@@ -91,15 +99,41 @@ namespace BatchHandler.ConsoleApp
             }
         }
 
+        /// <summary>
+        /// Removes the finished TaskCompletionSources from the <see cref="dtoToCompletionSources"/> dictionary.
+        /// </summary>
+        /// <param name="batchId">Id of the batch that was processed.</param>
+        private void RemoveFinishedCompletionSources(Guid batchId)
+        {
+            foreach (var i in batchIdToItems[batchId])
+            {
+                var tcs = dtoToCompletionSources[i];
+                bool isNotInFinalState = !(tcs.Task.IsCompleted || tcs.Task.IsCanceled);
+                if (isNotInFinalState)
+                {
+                    throw new Exception($"We should have already marked the task as completed or cancelled but status for {i} was '{tcs.Task.Status}'.");
+                }
+
+                if (!dtoToCompletionSources.TryRemove(i, out _))
+                {
+                    throw new Exception($"The key is not present anymore: {i}.");
+                }
+            }
+        }
+
         public Task<Result> Convert(int i)
         {
             var tcs = new TaskCompletionSource<Result>();
 
-            batcher.Register(i);
+            var batchId = batcher.Register(i);
             if (!dtoToCompletionSources.TryAdd(i, tcs))
             {
                 throw new Exception($"Key {i} was already present.");
             }
+
+            // Populate the list of integers of a current batch.
+            var intList = batchIdToItems.GetOrAdd(batchId, key => new List<int>(batcher.MaxCount));
+            intList.Add(i);
 
             return tcs.Task;
         }
@@ -107,35 +141,49 @@ namespace BatchHandler.ConsoleApp
 
     public class Batcher
     {
-        private readonly int maxCount = 1;
+        public readonly int MaxCount = 2;
         private readonly List<int> items;
-        public event Action<int[]> OnActionable;
+        public event Action<(Guid BatchId, int[] Integers)> OnActionable;
 
+        private Guid currentBatchId;
         private readonly object sync = new object();
 
         public Batcher()
         {
-            items = new List<int>(maxCount);
+            items = new List<int>(MaxCount);
+            currentBatchId = Guid.NewGuid();
         }
 
-        public void Register(int i)
+        
+        public Guid Register(int i)
         {
-            int[] itemsToPropagate = null;
+            (Guid, int[]) itemsToPropagate = default;
+
+            Guid returnBatchId = default;
             lock (sync)
             {
                 items.Add(i);
 
-                if (items.Count == maxCount /*|| timer */)
+                if (items.Count == MaxCount /*|| timer */)
                 {
-                    itemsToPropagate = items.ToArray();
+                    returnBatchId = currentBatchId;
+                    itemsToPropagate = (returnBatchId, items.ToArray());
+
                     items.Clear();
+                    currentBatchId = Guid.NewGuid();
+                }
+                else
+                {
+                    returnBatchId = currentBatchId;
                 }
             }
 
-            if (itemsToPropagate != null)
+            if (itemsToPropagate != default)
             {
                 OnActionable?.Invoke(itemsToPropagate);
             }
+
+            return returnBatchId;
         }
     }
 
