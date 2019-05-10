@@ -28,29 +28,21 @@ namespace BatchHandler.ConsoleApp
                 .Select(x => new { Number = x, CalculateTask = new BatchingHandler(batchProcessor).Handle(x) })
                 .ToList();
 
+            // Throw some more work, fire and forget
+            await Task.Run(async () =>
+            {
+                Enumerable.Range(rangeTo+1, 10000)
+                    .Select(x => new {Number = x, CalculateTask = new BatchingHandler(batchProcessor).Handle(x)})
+                    .Select(async x => Console.WriteLine(await x.CalculateTask))
+                    .ToList();
+            });
+
             foreach (var h in handlers)
             {
                 Result hexResult = null;
                 try
                 {
                     hexResult = await h.CalculateTask;
-
-                    // Throw more handlers into the game...
-                    var handlers2 = Enumerable.Range(rangeTo+1 * hexResult.SourceDto, 100)
-                        .Select(x => new {Number = x, CalculateTask = new BatchingHandler(batchProcessor).Handle(x)})
-                        .Select(async x =>
-                        {
-                            try
-                            {
-                                return await x.CalculateTask;
-                            }
-                            catch (ItemFailedException e)
-                            {
-                                Console.WriteLine("ItemFailedException (inner):" + e);
-                                return new Result(x.Number, e);
-                            }
-                        })
-                        .ToList();
                 }
                 catch (ItemFailedException ex)
                 {
