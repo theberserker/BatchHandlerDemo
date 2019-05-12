@@ -164,22 +164,10 @@ namespace BatchHandler.ConsoleApp
         /// </summary>
         private readonly object sync = new object();
 
-        /// <summary>
-        /// State of this class. Represents the pending batch ID for <see cref="items"/>.
-        /// </summary>
-        //private Guid currentBatchId;
-
-        /// <summary>
-        /// State of this class. Represents items in a batch for <see cref="currentBatchId"/>.
-        /// </summary>
-        //private readonly List<int> items;
-
         public Batcher(MyTimer timer)
         {
             this.timer = timer;
             state = new State(MaxCount);
-            //items = new List<int>(MaxCount);
-            //currentBatchId = Guid.NewGuid();
 
             this.timer.Elapsed += Timer_Elapsed;
         }
